@@ -330,6 +330,7 @@ class Installer:
         force=False,
         accept_all=False,
         base_url=BASE_URL,
+        tar_file=None,
     ):
         self._version = version
         self._preview = preview
@@ -337,6 +338,7 @@ class Installer:
         self._modify_path = True
         self._accept_all = accept_all
         self._base_url = base_url
+        self._tar_file = tar_file
 
     def allows_prereleases(self):
         return self._preview
@@ -479,20 +481,20 @@ class Installer:
 
         shutil.rmtree(POETRY_HOME)
 
-    def install(self, version, upgrade=False):
+    def install(self, version, upgrade=False, tar_path=None):
         """
         Installs Poetry in $POETRY_HOME.
         """
         print("Installing version: " + colorize("info", version))
 
-        self.make_lib(version)
+        self.make_lib(version, tar_path=None)
         self.make_bin()
         self.make_env()
         self.update_path()
 
         return 0
 
-    def make_lib(self, version):
+    def make_lib(self, version, tar_path=None):
         """
         Packs everything into a single lib/ directory.
         """
@@ -505,7 +507,10 @@ class Installer:
             shutil.rmtree(POETRY_LIB)
 
         try:
-            self._make_lib(version)
+            if not tar_path:
+                self._download_lib(version)
+            else:
+                self._make_lib(tar_path)
         except Exception:
             if not os.path.exists(POETRY_LIB_BACKUP):
                 raise
@@ -518,7 +523,7 @@ class Installer:
             if os.path.exists(POETRY_LIB_BACKUP):
                 shutil.rmtree(POETRY_LIB_BACKUP)
 
-    def _make_lib(self, version):
+    def _download_lib(self, version):
         # We get the payload from the remote host
         platform = sys.platform
         if platform == "linux2":
@@ -577,13 +582,15 @@ class Installer:
                         name, checksum, sha.hexdigest()
                     )
                 )
+            self._make_lib(tar)
 
-            gz = GzipFile(tar, mode="rb")
-            try:
-                with tarfile.TarFile(tar, fileobj=gz, format=tarfile.PAX_FORMAT) as f:
-                    f.extractall(POETRY_LIB)
-            finally:
-                gz.close()
+    def _make_lib(self, tar):
+        gz = GzipFile(tar, mode="rb")
+        try:
+            with tarfile.TarFile(tar, fileobj=gz, format=tarfile.PAX_FORMAT) as f:
+                f.extractall(POETRY_LIB)
+        finally:
+            gz.close()
 
     def make_bin(self):
         if not os.path.exists(POETRY_BIN):
@@ -926,6 +933,7 @@ def main():
     parser.add_argument(
         "--uninstall", dest="uninstall", action="store_true", default=False
     )
+    parser.add_argument("--file", dest="file", help="install Poetry in offline mode")
 
     args = parser.parse_args()
 
@@ -946,6 +954,7 @@ def main():
         or string_to_bool(os.getenv("POETRY_ACCEPT", "0"))
         or not is_interactive(),
         base_url=base_url,
+        tar_file=args.file,
     )
 
     if args.uninstall or string_to_bool(os.getenv("POETRY_UNINSTALL", "0")):
